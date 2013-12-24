@@ -3,56 +3,49 @@ library(data.table)
 
 ## Load data
 #r.data <- read.table("./data/proc_ED_nps_20", header=T,  sep=",") #2009.01.01 ~ 2009.12.31
-load("./data/proc_ED_nps_20.rda")
+load("../data/proc_ED_nps_20.rda")
 
 ## Time period:
 min(r.data$RECU_FR_DT)
 max(r.data$RECU_FR_DT)
 
-### Preprocessing (remove the duplicated records!!!!!!!!!!!! 11/14/2013 ###############
-### I found this after writing the first draft.
-### But it won't change the results much because every values are averaged
+### There are some duplicated records (dates) for some patients 11/14/2013 ###############
+### Should count as a one visit when count the number of visit.
 uni.NO <- unique(r.data$NO)
-include.idx <- apply(as.matrix(uni.NO), 1, temp <- function(id){
+temp.idx <- apply(as.matrix(uni.NO), 1, temp <- function(id){
 			temp <- r.data[which(r.data$NO==id),]
 			rs <- rownames(temp[which(duplicated(temp$RECU_FR_DT)==F),])
 			return(as.numeric(rs))
 			})
-include.idx <- unlist(include.idx)
-#> nrow(r.data)
-#[1] 1493456
-#> nrow(r.data)- length(include.idx)
-#[1] 87343
-#> 87343/ 1493456
-#[1] 0.0584838
-#>>>>>>>>>>>>>>>>>>>>>>>> anout 5% of the data is duplicated information!!!!!!!!!!!!!!!!!!!!
-
-r.data <- r.data[include.idx,]
-#############################################################################################
-
+temp.idx <- unlist(temp.idx)
+uni.date.idx <- rep(0, nrow(r.data))
+uni.date.idx[temp.idx] <- 1
 
 ## ED visitors
 ed.idx <- apply(as.matrix(r.data$IN_PAT_CORS_TYPE), 1, temp <- function(yy){
 					temp <- strsplit(as.character(yy), "")[[1]]
 					if(temp[2] == "1"){return(1)}else{return(0)}
 					})
-table(ed.idx) # proportion of ED patients
+
 r.dt <- data.table(r.data, ed.idx=ed.idx)
 setkey(r.dt, NO, ed.idx)
 ed.data <- r.data[which(ed.idx==1),]
+ed.dt <- data.table(ed.data)
+setkey(ed.dt, NO)
 
 ## multiple ED visitors
-as.matrix(table(table(ed.data$NO)))
 
 ## Frequent users definition: 
 #When defined as 4 or more ED visits per year, frequent users accounted for 4.5% to 8% of all ED patients
-num.ed.record.FF <- sum(table(ed.data$NO)[which(table(ed.data$NO)>=4)])
-num.ed.record.all <- sum(table(ed.data$NO))
+ed.count.data <- r.data[which(ed.idx==1 & uni.date.idx==1),]
+num.ed.record.FF <- sum(table(ed.count.data$NO)[which(table(ed.count.data$NO)>=4)])
+num.ed.record.all <- sum(table(ed.count.data$NO))
 #> num.ed.record.FF/num.ed.record.all
 #[1] 0.140102 <<<<<<<< CH
 
-FF.NO <- names(table(ed.data$NO)[which(table(ed.data$NO)>=4)]) 
-NO.FF.NO <- setdiff(unique(ed.data$NO), FF.NO)
+
+FF.NO <- names(table(ed.count.data$NO)[which(table(ed.count.data$NO)>=4)]) 
+NO.FF.NO <- setdiff(unique(ed.count.data$NO), FF.NO)
 num.ed.patients.FF <- length(FF.NO)
 num.ed.patients.all <- length(FF.NO) + length(NO.FF.NO)
 # >num.ed.patients.FF/num.ed.patients.all
@@ -62,7 +55,7 @@ num.ed.patients.all <- length(FF.NO) + length(NO.FF.NO)
 
 print(Sys.time())
 FF.info <- apply(as.matrix(FF.NO), 1, temp <- function(nn){
-		temp <- as.matrix(ed.dt[J(nn)])
+		temp <- as.matrix(ed.dt[J(as.numeric(nn))])
 		temp.age <- as.numeric(temp[,"age"][1])
 		# there is an issue in age column, age sometimes varies
 		temp.gen <- temp[,"gen"][1]
@@ -94,8 +87,8 @@ print(Sys.time())
 
 
 NO.FF.info <- apply(as.matrix(NO.FF.NO), 1, temp <- function(nn){
-		temp <- as.matrix(ed.dt[J(nn)])
-		if(nrow(ed.dt[J(nn)])>1){
+		temp <- as.matrix(ed.dt[J(as.numeric(nn))])
+		if(nrow(ed.dt[J(as.numeric(nn))])>1){
  	                temp.age <- as.numeric(temp[,"age"][1])
 	                temp.gen <- temp[,"gen"][1]
 	                temp.insurance.pay <- sum(as.numeric(temp[,"DMD_JBRDN_AMT"]))/nrow(temp)
@@ -193,10 +186,7 @@ FF.pay.total <- apply(as.matrix(FF.NO), 1, temp <- function(nn){
 FF.pay.total <- sum(FF.pay.total)
 pay.total <- sum(as.numeric(ed.data[,"DMD_TRAMT"]))
 FF.pay.total/pay.total
-t.test(FF.info[,"insurance.pay"]);t.test(NO.FF.info[,"insurance.pay"])
-t.test(FF.info[,"insurance.pay"], NO.FF.info[,"insurance.pay"])
-t.test(FF.info[,"patient.pay"]);t.test(NO.FF.info[,"patient.pay"]);
-t.test(FF.info[,"patient.pay"], NO.FF.info[,"patient.pay"])
+t.test(FF.info[,"insurance.pay"]+ FF.info[,"patient.pay"]);t.test(NO.FF.info[,"insurance.pay"] + NO.FF.info[,"patient.pay"])
 FF.insurance.pay.total <- apply(as.matrix(FF.NO), 1, temp <- function(nn){
                 temp <- ed.data[which(ed.data[,"NO"]==nn),]
                 temp.insurance.pay <- sum(as.numeric(temp[,"DMD_JBRDN_AMT"]))
